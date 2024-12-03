@@ -17,6 +17,7 @@ h       = W/Nx;
 % number of rock units contained in image
 n_units = 9;        
 
+
 % units = value of each pixel
 % D = tiff file depth
 % Nx = number of pixels in x direction 
@@ -55,7 +56,7 @@ matprop = [
 % get coefficient fields based on spatial distribution of rock units from image
 % pay attention if any unit conversion is required!
 rho    = reshape(matprop(units,3), Nz, Nx);
-Cp     = reshape(matprop(units,4), Nz, Nx);
+Cp     = reshape(matprop(units,4), Nz, Nx);         % need to find values for this ?
 sigma  = reshape(matprop(units,2), Nz, Nx);
 Hr     = reshape(matprop(units,5), Nz, Nx);
 
@@ -70,14 +71,17 @@ Ttop = 0;       % (C)              % air/water temperature
 Tbot = dTdz_bot*5000;              % find temperature at model base
 
 
-% should come up with a way to define T at the x boundaries
-% T_x0
+yr    = 3600*24*365;  % seconds per year [s]
+tend = 1e4*yr;
+
+CFL   = 1/16;         % Time step limiter
+nop   = 50;          % output figure produced every 'nop' steps
 
 
-nop = 50;
+T0 = 5; % surface air temperature
+dTdz_boundaries = [0, 35/1000];
 
-tend = 2;
-dt = 1;
+
 
 % *****  RUN MODEL
 run('transect2D.m');
