@@ -15,14 +15,12 @@ z_faces = 0:h:D;
 % create grid of coordinates
 [Xc,Zc] = meshgrid(x_cells, z_cells);
 
-% set time step size                                    (???)
-% dt = CFL * min((h/2)/u0,(h/2)^2/k0); % time step [s]
 
 % set up index arrays for boundary conditions           (????)
 
 ix = [   1, 1:Nx, Nx  ];          % insulating x boundaries
 
-iz = [   1, 1:Nz, Nz  ];          % isothermal start boundary, Nz+1 will be changed based on Nz value
+iz = [   1, 1:Nz, Nz  ];          % isothermal start boundary
 
 
 
@@ -30,15 +28,15 @@ iz = [   1, 1:Nz, Nz  ];          % isothermal start boundary, Nz+1 will be chan
 
 T = T0 + dTdz_boundaries(2)*Zc;  % initialise T array (based on what emily wrote)
 
-
-
-Tin = T;                                         % store initial condition
-Ta  = T;                                         % initialise analytical solution
+% Tin = T;                       % store initial condition
+% Ta  = T;                       % initialise analytical solution
 
 
 % set time step size
 dt = CFL * (h/2)^2 / max(k0, [], "all"); % time step [s]
 
+% indices of air coordinates
+air = units == 9;
 
 %*****  Solve Model Equations
 
@@ -47,19 +45,22 @@ tau = 0;  % initial time step count
 
 while t <= tend
 
+    T(air) = T0;
+
     % increment time and step count
     t = t+dt;
     tau = tau+1;
     
     % 4th-order Runge-Kutta time integration scheme
-    R1 = diffusion(T, k0, h, ix, iz);
-    R2 = diffusion(T + R1*dt/2, k0, h, ix, iz);
-    R3 = diffusion(T + R2*dt/2, k0, h, ix, iz);
-    R4 = diffusion(T + R3*dt, k0, h, ix, iz);
+    R1 = diffusion(T, k0, h, ix, iz, dTdz_boundaries(2));
+    R2 = diffusion(T + R1*dt/2, k0, h, ix, iz, dTdz_boundaries(2));
+    R3 = diffusion(T + R2*dt/2, k0, h, ix, iz, dTdz_boundaries(2));
+    R4 = diffusion(T + R3*dt, k0, h, ix, iz, dTdz_boundaries(2));
     
-    % calculate 
+    % calculate source term
     source = Hr ./ rho ./ Cp;
 
+    % numerical solution for T
     T = T + dt*(R1 + 2*R2 + 2*R3 + R4)/6 + source;
 
 
@@ -76,9 +77,7 @@ end
 
 
 % Function to calculate diffusion rate
-% Dtdzt, dTdzb = top and bottom heat flux
-% k0 diffusivity
-function dTdt = diffusion(f, k0, h, ix, iz)
+function dTdt = diffusion(f, k0, h, ix, iz, base_flux)
 
 % move k0 values to cell centres
 kz = ( k0(iz(1:end-1), :) + k0(iz(2:end), :) )/2;
@@ -86,9 +85,10 @@ kx = ( k0(:, ix(1:end-1)) + k0(:, ix(2:end)) )/2;
 
 
 % calculate heat flux by diffusion
-qz = - kz .* diff( f(iz,:),1,1) /h;
-qx = - kx .* diff( f(:,ix),1,2) /h;
+qz = - kz .* diff( f(iz,:), 1, 1) /h;
+qx = - kx .* diff( f(:,ix), 1, 2) /h;
 
+qz(end,:) = - k0(end,:)*base_flux;
 
 % calculate flux balance for rate of change (2nd derivative)
 dTdt = - ( diff(qz,1,1) + diff(qx,1,2) ) /h;
