@@ -26,11 +26,11 @@ iz = [   1, 1:Nz, Nz  ];          % isothermal start boundary
 
 % set initial condition for temperature at cell centres
 
-T = T0 + dTdz_boundaries(2)*Zc;  % initialise T array (based on what emily wrote)
+T = T0 + dTdz_boundaries(2)*Zc;  % initialise T array
 
 % Tin = T;                       % store initial condition
 % Ta  = T;                       % initialise analytical solution
-
+    
 
 % set time step size
 dt = CFL * (h/2)^2 / max(k0, [], "all"); % time step [s]
@@ -52,16 +52,14 @@ while t <= tend
     tau = tau+1;
     
     % 4th-order Runge-Kutta time integration scheme
-    R1 = diffusion(T, k0, h, ix, iz, dTdz_boundaries(2));
-    R2 = diffusion(T + R1*dt/2, k0, h, ix, iz, dTdz_boundaries(2));
-    R3 = diffusion(T + R2*dt/2, k0, h, ix, iz, dTdz_boundaries(2));
-    R4 = diffusion(T + R3*dt, k0, h, ix, iz, dTdz_boundaries(2));
-    
-    % calculate source term
-    source = Hr ./ rho ./ Cp;
+    R1 = diffusion(T, k0, h, ix, iz, dTdz_boundaries(2)) + source;
+    R2 = diffusion(T + R1*dt/2, k0, h, ix, iz, dTdz_boundaries(2)) + source;
+    R3 = diffusion(T + R2*dt/2, k0, h, ix, iz, dTdz_boundaries(2)) + source;
+    R4 = diffusion(T + R3*dt, k0, h, ix, iz, dTdz_boundaries(2)) + source;
+
 
     % numerical solution for T
-    T = T + dt*(R1 + 2*R2 + 2*R3 + R4)/6 + source;
+    T = T + (R1 + 2*R2 + 2*R3 + R4)*dt/6 ;
 
 
     % get analytical solution at time t
@@ -109,6 +107,7 @@ imagesc(x,z,T); axis equal tight; colorbar; hold on
 % contour(x,z,T,[100,150,200],'k');
 
 ylabel('z [m]','FontSize',15)
+xlabel('x [m]','FontSize',15)
 title('Temperature [C]','FontSize',17)
 
 drawnow;

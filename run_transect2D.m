@@ -75,12 +75,15 @@ yr    = 3600*24*365;  % seconds per year [s]
 tend = 1e7*yr;
 
 CFL   = 1/5;         % Time step limiter
-nop   = 50;          % output figure produced every 'nop' steps
+nop   = 5000;          % output figure produced every 'nop' steps
 
 
 T0 = 5; % surface air temperature
 
 dTdz_boundaries = [0, 35/1000];
+
+% calculate source term
+source = Hr ./ rho ./ Cp;
 
 
 
