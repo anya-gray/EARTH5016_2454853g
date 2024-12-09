@@ -52,15 +52,13 @@ while t <= tend
     tau = tau+1;
     
     % 4th-order Runge-Kutta time integration scheme
-    R1 = diffusion(T, k0, h, ix, iz, dTdz_boundaries(2)) + source;
-    R2 = diffusion(T + R1*dt/2, k0, h, ix, iz, dTdz_boundaries(2)) + source;
-    R3 = diffusion(T + R2*dt/2, k0, h, ix, iz, dTdz_boundaries(2)) + source;
-    R4 = diffusion(T + R3*dt, k0, h, ix, iz, dTdz_boundaries(2)) + source;
-
+    R1 = diffusion(T, k0, h, ix, iz, dTdz_boundaries(2));
+    R2 = diffusion(T + R1*dt/2, k0, h, ix, iz, dTdz_boundaries(2));
+    R3 = diffusion(T + R2*dt/2, k0, h, ix, iz, dTdz_boundaries(2));
+    R4 = diffusion(T + R3*dt, k0, h, ix, iz, dTdz_boundaries(2));
 
     % numerical solution for T
-    T = T + (R1 + 2*R2 + 2*R3 + R4)*dt/6 ;
-
+    T = T + (R1 + 2*R2 + 2*R3 + R4)*dt/6 + source;
 
     % get analytical solution at time t
 
@@ -88,6 +86,7 @@ qx = - kx .* diff( f(:,ix), 1, 2) /h;
 
 qz(end,:) = - k0(end,:)*base_flux;
 
+
 % calculate flux balance for rate of change (2nd derivative)
 dTdt = - ( diff(qz,1,1) + diff(qx,1,2) ) /h;
 
@@ -104,8 +103,8 @@ clf;
 
 imagesc(x,z,T); axis equal tight; colorbar; hold on
 
-% contour(x,z,T,[100,150,200],'k');
-
+[C,h] = contour(x,z,T,[150, 150],'k');
+clabel(C, h, 'Fontsize',12,'Color', 'r')
 ylabel('z [m]','FontSize',15)
 xlabel('x [m]','FontSize',15)
 title('Temperature [C]','FontSize',17)
