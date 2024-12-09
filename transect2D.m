@@ -29,11 +29,11 @@ iz = [   1, 1:Nz, Nz  ];          % isothermal start boundary
 T = T0 + dTdz_boundaries(2)*Zc;  % initialise T array
 
 % Tin = T;                       % store initial condition
-% Ta  = T;                       % initialise analytical solution
+Ta  = T;                       % initialise analytical solution (maybe divide by k0 ??)
     
 
 % set time step size
-dt = CFL * (h/2)^2 / max(k0, [], "all"); % time step [s]
+dt = CFL * (h/2)^2 / max(k0(:)); % time step [s]
 
 % indices of air coordinates
 air = units == 9;
@@ -60,15 +60,25 @@ while t <= tend
     % numerical solution for T
     T = T + (R1 + 2*R2 + 2*R3 + R4)*dt/6 + source;
 
-    % get analytical solution at time t
-
+    % get analytical solution at time t (currently no change with time)
+    
 
     % plot model progress
-    if ~mod(tau,nop)
-        makefig(x_cells,z_cells,T);
+    if plotAnimation
+        if ~mod(tau,nop)
+            makefig(x_cells,z_cells,T);
+        end
     end
 
 end
+
+Errz = norm(T-Ta,1)./norm(Ta,1);
+Errx = norm(T-Ta,2)./norm(Ta,2);
+
+disp(' ');
+disp(['Numerical error on x = ', num2str(Errx)]);
+disp(['Numerical error on z = ', num2str(Errz)]);
+disp(' ');
 
 
 
@@ -103,7 +113,7 @@ clf;
 
 imagesc(x,z,T); axis equal tight; colorbar; hold on
 
-[C,h] = contour(x,z,T,[150, 150],'k');
+[C,h] = contour(x,z,T,[40, 90, 150],'k');
 clabel(C, h, 'Fontsize',12,'Color', 'r')
 ylabel('z [m]','FontSize',15)
 xlabel('x [m]','FontSize',15)
