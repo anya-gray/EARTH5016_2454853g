@@ -3,37 +3,55 @@
 % clear workspace
 clear all; close all; %clc;
 
-% convergence
-NN = [50,100,150];
 
+% **** MODEL PARAMTERS ****
+yr    = 3600*24*365;    % seconds per year [s]
+t_end = 1e6*yr;         % when to stop the simulation (should be 1e6 years)
+CFL   = 1/10;           % Time step limiter
+nop   = 3000;           % output figure produced every 'nop' iterations
+
+
+% number of pixels for the convergence test
+% NN = [100, 200, 300];
+NN = [200];
+% convergenceTest = true;
+validation = false;
+
+% show evolution?
+plotAnimation = false;
+
+% kind of temperature gradient to initialise
+linear = true;        
+gaussian = false;
+
+
+% details for 2D Gaussian convergence test
+Twidth = 1000;           % initial T peak width
+Tpeak = 1000;            % initial T peak amplitude
+T0 = 100;                % initial background temperature
+
+
+% run model for each specified pixel size
 for nn = 1:length(NN)
 disp(['Iterating...', nn])
 
+
+
 % load model setup from image, interpolate to target grid size
 
-% domain width (must correspond to width of image) [m]
-W       = 16e3;     
+W       = 16e3;     % domain width (width of image) [m]
+Nx      = NN(nn);   % number of rows 
+h       = W/Nx;     % grid spacing based on image width and target grid size
+n_units = 9;        % number of rock units contained in image
 
-% number of pixels in z direction (number of rows) 
-Nx = NN(nn);
 
-% grid spacing based on image width and target grid size
-h       = W/Nx;     
 
-% number of rock units contained in image
-n_units = 9;        
-
+% ****** CALIBRATE MODEL *******
 
 % units = value of each pixel
 % D = tiff file depth
 % Nx = number of pixels in x direction 
 [units, D, Nz] = ModelFromImage('section.tiff', n_units, W, Nx);
-
-
-
-
-
-
 
 
 % material properties for each rock unit (update based on your calibration)
@@ -46,56 +64,62 @@ n_units = 9;
 % 7: Si     silt
 % 8: Ms     mud, silt, sand
 % 9: Air/water
+if linear
 matprop = [
 % unit  conductivity  density  heat capacity  heat production
-%  #        sigma       rho         Cp           Hr
-   1	    3.6788	    2697.6	    600	        4.172               % 1172 other option for C (data_1)
-   2	    2.465	    2700	    770 	    2                   % sigma- chatGPT conversion from val in data_3; Hr data_4
+%  #      sigma (1e3)   rho         Cp           Hr (1e-6)
+   1	    3.6788	    2697.6	    600	        4.172               % C: data_1 (1172 other option)
+   2	    2.465	    2700	    770 	    3.7                 % sigma: data_3 (conversion from) chatGPT conversion; Hr data_4
    3	    3.2197	    2703.5	    600	        5.575               % ***where are these from??
-   4	    0.77	    1942.3	    740	        1                   % C-quartz,data_1; sigma data_2
-   5	    0.77	    2648	    740	        1                   % C-quartz,data_1; sigma data_2
-   6	    0.924	    2081.7	    860	        1                   % C, data_1, rho, excel, sigma data_2
-   7	    1.67	    1916	    910	        1                   % 
-   8	    0.919	    1909.78	    740	        1                   % 
-   9	    1e-6        1	        1000	    0];  % air/water
+   4	    0.77	    1942.3	    740	        0.75                % C: data_1 (quartz); sigma: data_2; Hr: data_5
+   5	    0.77	    2648	    740	        0.95                % C: data_1 (quartz); sigma: data_2; Hr: data_5
+   6	    0.924	    2081.7	    860	        1.43                % C: data_1; rho: excel avg; sigma: data_2; Hr: data_5 (clay only)
+   7	    1.67	    1916	    910	        1.3                 % (MISSING REF FOR SIG, RHO, CP); Hr: data_5 (beach sands)
+   8	    0.919	    1909.78	    740	        1.2                 % (MISSING REF FOR SIG, RHO, CP); Hr: data_5 (beach sands)
+   9	    1e-6        1	        1000	    0];                 % *** should confirm values for simulatoin
+end
+
+% use spatially independent material properties for gaussian convergence test
+if gaussian
+    matprop = [
+    % unit  conductivity  density  heat capacity  heat production
+    %  #      sigma (1e3)   rho         Cp           Hr (1e-6)
+       1	    1	        2000	    1000	    1
+       2	    1	        2000	    1000	    1
+       3	    1	        2000	    1000	    1
+       4	    1	        2000	    1000	    1
+       5	    1	        2000	    1000	    1
+       6	    1	        2000	    1000	    1
+       7	    1	        2000	    1000	    1
+       8	    1	        2000	    1000	    1
+       9	    1           2000	    1000	    0];     %sigma = 1e-6; rho = 1000 ?
+end
 
 
 % get coefficient fields based on spatial distribution of rock units from image
-% pay attention if any unit conversion is required!
+sigma  = reshape(matprop(units,2), Nz, Nx) *10^3;       % ensure W/m/K
 rho    = reshape(matprop(units,3), Nz, Nx);
 Cp     = reshape(matprop(units,4), Nz, Nx);   
-sigma  = reshape(matprop(units,2), Nz, Nx);
-Hr     = reshape(matprop(units,5), Nz, Nx)*10^-6;     % test the 1e-6 thing in the excel file
+Hr     = reshape(matprop(units,5), Nz, Nx)*10^-6;       % ensure W/m3
 
 
 % find diffusivity at each coordinate
-k0 = 10^3 * sigma ./ rho ./ Cp;
+k0 = sigma ./ rho ./ Cp;
 
 
-% calculate source term
+% calculate source term throughout transect in linear case
+if linear
 source = Hr ./ rho ./ Cp;
-
-
-% remaining model parameters
-dTdz_top = 0;                      % flux at top
-dTdz_bot = 35/1000;                % flux at bottom
-
-
-yr    = 3600*24*365;  % seconds per year [s]
-tend = 1e4*yr;
-
-CFL   = 1/5;         % Time step limiter
-nop   = 5000;          % output figure produced every 'nop' steps
-
-
-T0 = 5; % surface air temperature
-
-
-dTdz_boundaries = [0, 35/1000];
+end
 
 
 
-plotAnimation = false;
+% ***** remaining model parameters
+
+dTdz_boundaries = [0, 35/1000];       % heat flux at top and bottom      % this (list) can maybe change later
+
+T_air = 5;                  % surface air temperature to enforce at each t
+
 
 % *****  RUN MODEL
 run('transect2D.m');
@@ -110,7 +134,6 @@ end
 
 % an increasing step size should result in an increase in error
 % need to run for more years to see if this will work out
-convergenceTest = true;
 
 if convergenceTest
 
@@ -139,12 +162,15 @@ title('Numerical Convergence in Space z', 'FontSize',20)
 
 end
 
+
+
 % TO DO:
 % compare column vals with D site borehole placement
 
 % validation test - closed boundaries:
 %   no source term, closed boundaries
 %   check T is constant through time
+%   check linear gradient consistent through time
 
 
 % parameter tests:
