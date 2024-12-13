@@ -6,41 +6,30 @@ clear all; close all; %clc;
 
 % **** MODEL PARAMTERS ****
 yr    = 3600*24*365;    % seconds per year [s]
-t_end = 1e4*yr;         % when to stop the simulation (should be 1e6 years)
-CFL   = 1/50;           % Time step limiter
-nop   = 1000;           % output figure produced every 'nop' iterations
+t_end = 1e6*yr+5000;         % when to stop the simulation (should be 1e6 years)
+CFL   = 1/5;           % Time step limiter
+
+plot_freq   = 1000;     % #timesteps between each animation frame
 
 
-% number of pixels for the convergence test
-% NN = [100, 200, 300];
-NN = [200];
-convergenceTest = false;
-validation = true;
+% **** BOOLEANS FOR WHICH MODEL/TEST TO RUN
 
-% show evolution?
-plotAnimation = false;
+validation = false;     % energy conservation test?
+plotAnimation = false;   % show evolution?
+plot_result = true;      % plot result?
 
-% kind of temperature gradient to initialise
-linear = true;        
+linear = true;          % kind of temperature gradient to initialise
 gaussian = false;
-
-
 % details for 2D Gaussian convergence test
 Twidth = 1000;           % initial T peak width
 Tpeak = 1000;            % initial T peak amplitude
 T0 = 100;                % initial background temperature
 
 
-% run model for each specified pixel size
-for nn = 1:length(NN)
-disp(['Iterating...', nn])
-
-
-
-% load model setup from image, interpolate to target grid size
+% **** load model setup from image, interpolate to target grid size
 
 W       = 16e3;     % domain width (width of image) [m]
-Nx      = NN(nn);   % number of rows 
+Nx      = 200;      % number of rows 
 h       = W/Nx;     % grid spacing based on image width and target grid size
 n_units = 9;        % number of rock units contained in image
 
@@ -100,8 +89,8 @@ end
 sigma  = reshape(matprop(units,2), Nz, Nx);  
 rho    = reshape(matprop(units,3), Nz, Nx);
 Cp     = reshape(matprop(units,4), Nz, Nx);   
-Hr     = reshape(matprop(units,5), Nz, Nx)*10^-6;       % ensure W/m3
-phi    = reshape(matprop(units,6), Nz, Nx)/100;         % percent -> fraction
+Hr     = reshape(matprop(units,5), Nz, Nx)*10^-6;     % ensure W/m3
+phi    = reshape(matprop(units,6), Nz, Nx)/100;       % percent -> fraction
 
 
 % ******* account for porosities of the sediments
@@ -111,10 +100,16 @@ rho = (1-phi).*rho + phi.*1000;
 Cp = (1-phi).*Cp + phi.*1000;
 Hr = (1-phi).*Hr;               % heat rate of air = 0
 
-energy_factor = sum( rho(:).*Cp(:)*h*h );
+
 
 % find diffusivity at each coordinate
 k0 = sigma ./ rho ./ Cp;
+
+
+% constant term for finding the total thermal energy 
+if validation
+    energy_factor = sum( rho(:).*Cp(:)*h*h );
+end
 
 
 % calculate source term throughout transect in linear case
@@ -125,8 +120,8 @@ end
 
 
 % ***** remaining model parameters
-
-dTdz_boundaries = [0, 35/1000];       % heat flux at top and bottom      % this (list) can maybe change later
+geotherm = 35/1000;                 % 35 degC/km geothermal gradient
+base_flux = - k0(end,:)*geotherm;   % for enforcing the flux at the bottom
 
 T_air = 5;                  % surface air temperature to enforce at each t
 
@@ -134,53 +129,10 @@ T_air = 5;                  % surface air temperature to enforce at each t
 % *****  RUN MODEL
 run('transect2D.m');
 
-% Ex(nn) = Errx;
-% Ez(nn) = Errz;
-% DH(nn) = h;
-
-end
-
-
-
-% an increasing step size should result in an increase in error
-% need to run for more years to see if this will work out
-
-if convergenceTest
-
-subplot(1,2,1)
-loglog(DH, Ex, 'ro', 'LineWidth',1.5, 'MarkerSize',8); axis tight; box on; hold on
-loglog(DH, Ex(1).*[1,1/2,1/4].^1, 'k-','LineWidth', 0.7);
-loglog(DH, Ex(1).*[1,1/2,1/4].^2, 'k-','LineWidth', 0.9);
-loglog(DH, Ex(1).*[1,1/2,1/4].^3, 'k-','LineWidth', 1.1);
-loglog(DH, Ex(1).*[1,1/2,1/4].^4, 'k-','LineWidth', 1.3);
-loglog(DH, Ex(1).*[1,1/2,1/4].^5, 'k-','LineWidth', 1.5);
-xlabel('Step size', 'FontSize',18)
-ylabel('Numerical error', 'FontSize',18)
-title('Numerical Convergence in Space x', 'FontSize',20)
-
-
-subplot(1,2,2)
-loglog(DH, Ez, 'ro', 'LineWidth',1.5, 'MarkerSize',8); axis tight; box on; hold on
-loglog(DH, Ez(1).*[1,1/2,1/4].^1, 'k-','LineWidth', 0.7);
-loglog(DH, Ez(1).*[1,1/2,1/4].^2, 'k-','LineWidth', 0.9);
-loglog(DH, Ez(1).*[1,1/2,1/4].^3, 'k-','LineWidth', 1.1);
-loglog(DH, Ez(1).*[1,1/2,1/4].^4, 'k-','LineWidth', 1.3);
-loglog(DH, Ez(1).*[1,1/2,1/4].^5, 'k-','LineWidth', 1.5);
-xlabel('Step size', 'FontSize',18)
-ylabel('Numerical error', 'FontSize',18)
-title('Numerical Convergence in Space z', 'FontSize',20)
-
-end
-
 
 
 % TO DO:
 % compare column vals with D site borehole placement
-
-% validation test - closed boundaries:
-%   no source term, closed boundaries
-%   check T is constant through time
-%   check linear gradient consistent through time
 
 
 % parameter tests:
@@ -191,6 +143,3 @@ end
 
 % spatial distributions of variables
 % - where do we see high T and where is high Hr - do they match up
-
-% convergence test:
-% run overnight and check results 

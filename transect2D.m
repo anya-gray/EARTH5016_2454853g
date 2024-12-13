@@ -16,20 +16,10 @@ z_faces = 0:h:D;
 [Xc,Zc] = meshgrid(x_cells, z_cells);
 
 
-% set up index arrays for boundary conditions           (????)
-% if linear
-ix = [   1, 1:Nx, Nx  ];          % insulating boundaries
-
+% set up index arrays for insulating boundary conditions
+ix = [   1, 1:Nx, Nx  ];  
 iz = [   1, 1:Nz, Nz  ];          
 
-
-% set initial condition for temperature at cell centres
-
-% T = T0 + dTdz_boundaries(2)*Zc;  % initialise temperature array
-
-% Tin = T;                       % store initial condition
-% Ta  = T;                       % initialise analytical solution (maybe divide by k0 ??)
-    
 
 % set time step size
 dt = CFL * (h/2)^2 / max(k0(:)); % time step [s]
@@ -43,6 +33,150 @@ t = 0;  % initial time [s]
 tau = 0;  % initial time step count
 
 
+% temperature evolution for linear initialisation
+if linear
+    shape = 'linear';
+    
+    % initialise linear temperature array
+    T = T_air + geotherm*Zc;  
+    
+    % initialise energy to plot
+    if validation
+        thermal_energy = [];
+        time = [];
+        temperature = [];
+        factor = [];
+    end
+    
+    while t <= t_end
+
+        if ~validation
+            % enfore air temperature at all timesteps
+            T(air) = T_air;
+        end
+        
+        % save the total thermal energy at time t, and time for plotting
+        % round E to 7 significant figures with method from ChatGPT
+        if validation 
+            E = (sum( T(:) ) * energy_factor);
+            % thermal_energy(end+1) = round( E, 7 - ceil(log10(abs(E))));
+            thermal_energy(end+1) = E;
+            time(end+1) = t/yr;
+        end
+    
+        % increment time and step count
+        t = t+dt;
+        tau = tau+1;
+        
+        % 4th-order Runge-Kutta time integration scheme
+        R1 = diffusion(shape, T, k0, h, ix, iz, base_flux, validation);
+        R2 = diffusion(shape, T + R1*dt/2, k0, h, ix, iz, base_flux, validation);
+        R3 = diffusion(shape, T + R2*dt/2, k0, h, ix, iz, base_flux, validation);
+        R4 = diffusion(shape, T + R3*dt, k0, h, ix, iz, base_flux, validation);
+    
+        % numerical solution for T
+        if validation
+            T = T + (R1 + 2*R2 + 2*R3 + R4)*dt/6;      % remove source term
+        else
+            T = T + (R1 + 2*R2 + 2*R3 + R4)*dt/6 + source;
+        end
+
+        % progress update: display the time
+        if ~mod(tau,1e5)
+            disp(t/yr)
+        end
+    
+        % plot model progress
+        if plotAnimation
+            if ~mod(tau, plot_freq)
+                makefig(x_cells, z_cells, T, t, yr);
+            end
+            % if tau == 1e6
+            %     makefig(x_cells, z_cells, T, t, yr);
+            % end
+
+        end
+    end
+   
+    % plot final result of simulation
+    if plot_result
+        makefig(x_cells, z_cells, T, t, yr);
+    end
+    
+    % move out of this loop eventually
+    if validation
+        clf; 
+        plot(time, thermal_energy, 'color', [0.5 0 0.5], 'LineWidth',2)
+        ylim([2.716e20 2.717e20])
+        xlabel('Time (years)', 'FontSize', 18, 'FontName', 'Times New Roman')
+        ylabel('Energy (J)', 'FontSize',18, 'FontName', 'Times New Roman')
+        title('Total Thermal Energy in the System', 'FontSize',20, 'FontName', 'Times New Roman')
+    end
+end
+
+
+% Function to calculate diffusion rate dTdt
+function dTdt = diffusion(shape, f, k0, h, ix, iz, base_flux, validation)
+
+    % find diffusivity in the linear or gaussian case
+    switch shape
+        case 'linear'
+            % move k0 values to cell centres
+            kz = ( k0(iz(1:end-1), :) + k0(iz(2:end), :) )/2;
+            kx = ( k0(:, ix(1:end-1)) + k0(:, ix(2:end)) )/2;
+        
+        case 'gaussian'
+            % no need to move the k0s in this case as they are homogeneous
+            kz = k0;
+            kx = k0;
+    end
+
+
+    % calculate heat flux by diffusion
+    qz = - kz .* diff( f(iz,:), 1, 1) /h;
+    qx = - kx .* diff( f(:,ix), 1, 2) /h;
+    
+    
+    % put in the basal heat flux in standard linear gradient case
+    switch shape
+        case 'linear'
+            if ~validation
+                qz(end,:) = base_flux;
+            end
+    end
+
+% calculate flux balance for rate of change (2nd derivative)
+dTdt = - ( diff(qz, 1, 1) + diff(qx, 1, 2) ) /h;
+
+end
+
+
+
+% plot animation of temperature dynamics through time
+function makefig(x, z, T, t, yr)
+
+clf; 
+
+% Temperature contour plot
+imagesc(x,z,T); axis equal tight; colorbar; hold on
+
+% contour lines at 40, 90 and 150 degC
+[C,h] = contour(x,z,T,[40, 90, 150],'k');
+clabel(C, h, 'Fontsize',12,'Color', 'r')
+
+% axes labels and titles
+ylabel('z (m)','FontSize',15, 'FontName','Times New Roman')
+ylabel(colorbar, 'Temperature (\circC)', 'FontName','Times New Roman')
+xlabel('x (m)','FontSize',15, 'FontName','Times New Roman')
+title(['Temperature Distribution (\circC) at ', num2str(floor(t/yr)), ' years.'], 'FontSize',17, 'FontName','Times New Roman')
+
+drawnow;        % animate
+
+end
+
+
+
+% ****************** Gaussian case (couldn't get this to fully work)
 % temperature evolution for:
 % - CLOSED, INSULATING BOUNDARIES
 % - NO BASAL HEAT FLUX
@@ -95,172 +229,5 @@ if gaussian
     disp(['Numerical error on x = ', num2str(Errx)]);
     disp(['Numerical error on z = ', num2str(Errz)]);
     disp(' ');
-
-
-end
-
-
-
-% temperature evolution for linear initialisation
-if linear
-    shape = 'linear';
-    
-    % initialise linear temperature array
-    T = T_air + dTdz_boundaries(2)*Zc;  
-    
-    % initialise energy to plot
-    if validation
-        thermal_energy = [];
-        temperature = [];
-        factor = [];
-    end
-    
-    while t <= t_end
-        % disp(t)
-        
-        if ~validation
-            % enfore air temperature at all timesteps
-            T(air) = T_air;
-        end
-        
-        % save the total thermal energy at time t
-        if validation
-            thermal_energy(end+1) = sum( T(:) ) * energy_factor;
-            % temperature(end+1) = sum( T(:) );
-            % factor(end+1) = sum( rho(:).*Cp(:)*h*h );
-        end
-    
-        % increment time and step count
-        t = t+dt;
-        tau = tau+1;
-        
-        % 4th-order Runge-Kutta time integration scheme
-        R1 = diffusion(shape, T, k0, h, ix, iz, dTdz_boundaries(2), validation);
-        R2 = diffusion(shape, T + R1*dt/2, k0, h, ix, iz, dTdz_boundaries(2), validation);
-        R3 = diffusion(shape, T + R2*dt/2, k0, h, ix, iz, dTdz_boundaries(2), validation);
-        R4 = diffusion(shape, T + R3*dt, k0, h, ix, iz, dTdz_boundaries(2), validation);
-    
-        % numerical solution for T
-        if validation
-            T = T + (R1 + 2*R2 + 2*R3 + R4)*dt/6; % pretend source is 0
-        else
-            T = T + (R1 + 2*R2 + 2*R3 + R4)*dt/6 + source;
-        end
-    
-        % plot model progress
-        if plotAnimation
-            if ~mod(tau,nop)
-                makefig(x_cells, z_cells, T, t, yr);
-            end
-        end
-    end
-
-    % move out of this loop eventually
-    if validation
-        clf; 
-        % subplot(1,3,1)
-        % plot(temperature)
-        % xlabel('Time', 'FontSize',18)
-        % ylabel('Total Temperature', 'FontSize',18)
-        % title('Temperature in the System', 'FontSize',20)
-        % 
-        % subplot(1,3,2)
-        % plot(factor)
-        % xlabel('Time', 'FontSize',18)
-        % ylabel('rho*Cp*dx*dx', 'FontSize',18)
-        % title('That other factor the System', 'FontSize',20)
-        % 
-        % subplot(1,3,3)
-        plot(thermal_energy)
-        xlabel('Time', 'FontSize',18)
-        ylabel('Total Thermal Energy', 'FontSize',18)
-        title('Thermal Energy in the System', 'FontSize',20)
-    end
-end
-
-
-% Function to calculate diffusion rate
-function dTdt = diffusion(shape, f, k0, h, ix, iz, base_flux, validation)
-
-    switch shape
-        case 'linear'
-            % move k0 values to cell centres
-            kz = ( k0(iz(1:end-1), :) + k0(iz(2:end), :) )/2;
-            kx = ( k0(:, ix(1:end-1)) + k0(:, ix(2:end)) )/2;
-        
-        case 'gaussian'
-            % no need to move the k0s in this case as they are homogeneous (?)
-            kz = k0;
-            kx = k0;
-    
-        case 'test'
-            % move k0 values to cell centres
-            kz = ( k0(iz(1:end-1), :) + k0(iz(2:end), :) )/2;
-            kx = ( k0(:, ix(1:end-1)) + k0(:, ix(2:end)) )/2;
-    end
-
-
-    % calculate heat flux by diffusion
-    qz = - kz .* diff( f(iz,:), 1, 1) /h;
-    qx = - kx .* diff( f(:,ix), 1, 2) /h;
-    
-    
-    switch shape
-    
-        
-        case 'linear'
-            % ensure basal heat flux in standard linear gradient case
-            if ~validation
-                qz(end,:) = - k0(end,:)*base_flux;
-            end
-            
-            % close boundaries for validation test
-            % if validation
-            %     qz(1, :) = 0;
-            %     qz(end, :) = 0;
-            % 
-            %     qx(:, 1) = 0;
-            %     qx(:, end) = 0;
-            % end
-    
-        % ensure 0-flux boundaries
-        % case 'gaussian'
-        %     qz(1, :) = 0;
-        %     qz(end, :) = 0;
-        %     qx(:, 1) = 0;
-        %     qx(:, end) = 0;
-        % 
-        % case 'test'
-        %     qz(1, :) = 0;
-        %     qz(end, :) = 0;
-        %     qx(:, 1) = 0;
-        %     qx(:, end) = 0;
-    end
-
-% calculate flux balance for rate of change (2nd derivative)
-dTdt = - ( diff(qz, 1, 1) + diff(qx, 1, 2) ) /h;
-
-end
-
-
-
-% Function to make output figure
-function makefig(x, z, T, t, yr)
-
-clf; 
-
-% plot temperature 
-
-imagesc(x,z,T); axis equal tight; colorbar; hold on
-
-[C,h] = contour(x,z,T,[40, 90, 150],'k');
-clabel(C, h, 'Fontsize',12,'Color', 'r')
-
-ylabel('z (m)','FontSize',15, 'FontName','Times New Roman')
-ylabel(colorbar, 'Temperature (\circC)', 'FontName','Times New Roman')
-xlabel('x (m)','FontSize',15, 'FontName','Times New Roman')
-title(['Temperature Distribution (\circC) at ', num2str(floor(t/yr)), ' years.'], 'FontSize',17, 'FontName','Times New Roman')
-
-drawnow;
 
 end
