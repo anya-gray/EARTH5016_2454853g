@@ -21,12 +21,7 @@ z_faces = 0:h:D;
 ix = [   1, 1:Nx, Nx  ];          % insulating boundaries
 
 iz = [   1, 1:Nz, Nz  ];          
-% end
-% 
-% if gaussian
-%     ix = [1:Nx];
-%     iz = [1:Nz];
-% end
+
 
 % set initial condition for temperature at cell centres
 
@@ -114,33 +109,43 @@ if linear
     T = T_air + dTdz_boundaries(2)*Zc;  
     
     % initialise energy to plot
-    thermal_energy = [];
+    if validation
+        thermal_energy = [];
+        temperature = [];
+        factor = [];
+    end
     
     while t <= t_end
-    
-        % enfore air temperature at all timesteps
-        T(air) = T_air;
-
-
-        % energy at time t
-        thermal_energy(end+1) = sum( T(:).*rho(:).*Cp(:)*h^2 );
+        % disp(t)
+        
+        if ~validation
+            % enfore air temperature at all timesteps
+            T(air) = T_air;
+        end
+        
+        % save the total thermal energy at time t
+        if validation
+            thermal_energy(end+1) = sum( T(:) ) * energy_factor;
+            % temperature(end+1) = sum( T(:) );
+            % factor(end+1) = sum( rho(:).*Cp(:)*h*h );
+        end
     
         % increment time and step count
         t = t+dt;
         tau = tau+1;
         
         % 4th-order Runge-Kutta time integration scheme
-        R1 = diffusion(shape, T, k0, h, ix, iz, dTdz_boundaries(2));
-        R2 = diffusion(shape, T + R1*dt/2, k0, h, ix, iz, dTdz_boundaries(2));
-        R3 = diffusion(shape, T + R2*dt/2, k0, h, ix, iz, dTdz_boundaries(2));
-        R4 = diffusion(shape, T + R3*dt, k0, h, ix, iz, dTdz_boundaries(2));
+        R1 = diffusion(shape, T, k0, h, ix, iz, dTdz_boundaries(2), validation);
+        R2 = diffusion(shape, T + R1*dt/2, k0, h, ix, iz, dTdz_boundaries(2), validation);
+        R3 = diffusion(shape, T + R2*dt/2, k0, h, ix, iz, dTdz_boundaries(2), validation);
+        R4 = diffusion(shape, T + R3*dt, k0, h, ix, iz, dTdz_boundaries(2), validation);
     
         % numerical solution for T
-        % if validation
-        %     T = T + (R1 + 2*R2 + 2*R3 + R4)*dt/6; % pretend source is 0
-        % else
-        T = T + (R1 + 2*R2 + 2*R3 + R4)*dt/6 + source;
-        % end
+        if validation
+            T = T + (R1 + 2*R2 + 2*R3 + R4)*dt/6; % pretend source is 0
+        else
+            T = T + (R1 + 2*R2 + 2*R3 + R4)*dt/6 + source;
+        end
     
         % plot model progress
         if plotAnimation
@@ -151,62 +156,89 @@ if linear
     end
 
     % move out of this loop eventually
-    plot(thermal_energy)
-    xlabel('Time', 'FontSize',18)
-    ylabel('Total Thermal Energy', 'FontSize',18)
-    title('Thermal Energy in the System', 'FontSize',20)
-
+    if validation
+        clf; 
+        % subplot(1,3,1)
+        % plot(temperature)
+        % xlabel('Time', 'FontSize',18)
+        % ylabel('Total Temperature', 'FontSize',18)
+        % title('Temperature in the System', 'FontSize',20)
+        % 
+        % subplot(1,3,2)
+        % plot(factor)
+        % xlabel('Time', 'FontSize',18)
+        % ylabel('rho*Cp*dx*dx', 'FontSize',18)
+        % title('That other factor the System', 'FontSize',20)
+        % 
+        % subplot(1,3,3)
+        plot(thermal_energy)
+        xlabel('Time', 'FontSize',18)
+        ylabel('Total Thermal Energy', 'FontSize',18)
+        title('Thermal Energy in the System', 'FontSize',20)
+    end
 end
 
 
 % Function to calculate diffusion rate
-function dTdt = diffusion(shape, f, k0, h, ix, iz, base_flux)
+function dTdt = diffusion(shape, f, k0, h, ix, iz, base_flux, validation)
 
-switch shape
-    case 'linear'
-        % move k0 values to cell centres
-        kz = ( k0(iz(1:end-1), :) + k0(iz(2:end), :) )/2;
-        kx = ( k0(:, ix(1:end-1)) + k0(:, ix(2:end)) )/2;
+    switch shape
+        case 'linear'
+            % move k0 values to cell centres
+            kz = ( k0(iz(1:end-1), :) + k0(iz(2:end), :) )/2;
+            kx = ( k0(:, ix(1:end-1)) + k0(:, ix(2:end)) )/2;
+        
+        case 'gaussian'
+            % no need to move the k0s in this case as they are homogeneous (?)
+            kz = k0;
+            kx = k0;
     
-    case 'gaussian'
-        % no need to move the k0s in this case as they are homogeneous (?)
-        kz = k0;
-        kx = k0;
-
-    case 'test'
-        % move k0 values to cell centres
-        kz = ( k0(iz(1:end-1), :) + k0(iz(2:end), :) )/2;
-        kx = ( k0(:, ix(1:end-1)) + k0(:, ix(2:end)) )/2;
-end
+        case 'test'
+            % move k0 values to cell centres
+            kz = ( k0(iz(1:end-1), :) + k0(iz(2:end), :) )/2;
+            kx = ( k0(:, ix(1:end-1)) + k0(:, ix(2:end)) )/2;
+    end
 
 
-% calculate heat flux by diffusion
-qz = - kz .* diff( f(iz,:), 1, 1) /h;
-qx = - kx .* diff( f(:,ix), 1, 2) /h;
-
-
-switch shape
-
-    % ensure basal heat flux comes in in linear gradient case
-    case 'linear'
-        qz(end,:) = - k0(end,:)*base_flux;
-
-    % ensure 0-flux boundaries
-    case 'gaussian'
-        qz(1,:) = 0;
-        qz(end, :) = 0;
-        qx(:,1) = 0;
-        qx(:,end) = 0;
+    % calculate heat flux by diffusion
+    qz = - kz .* diff( f(iz,:), 1, 1) /h;
+    qx = - kx .* diff( f(:,ix), 1, 2) /h;
     
-    case 'test'
-    qz(1,:) = 0;
-    qz(end, :) = 0;
-    qx(:,1) = 0;
-    qx(:,end) = 0;
-end
+    
+    switch shape
+    
+        
+        case 'linear'
+            % ensure basal heat flux in standard linear gradient case
+            if ~validation
+                qz(end,:) = - k0(end,:)*base_flux;
+            end
+            
+            % close boundaries for validation test
+            % if validation
+            %     qz(1, :) = 0;
+            %     qz(end, :) = 0;
+            % 
+            %     qx(:, 1) = 0;
+            %     qx(:, end) = 0;
+            % end
+    
+        % ensure 0-flux boundaries
+        % case 'gaussian'
+        %     qz(1, :) = 0;
+        %     qz(end, :) = 0;
+        %     qx(:, 1) = 0;
+        %     qx(:, end) = 0;
+        % 
+        % case 'test'
+        %     qz(1, :) = 0;
+        %     qz(end, :) = 0;
+        %     qx(:, 1) = 0;
+        %     qx(:, end) = 0;
+    end
 
 % calculate flux balance for rate of change (2nd derivative)
-dTdt = - ( diff(qz,1,1) + diff(qx,1,2) ) /h;
+dTdt = - ( diff(qz, 1, 1) + diff(qx, 1, 2) ) /h;
 
 end
 
@@ -223,9 +255,11 @@ imagesc(x,z,T); axis equal tight; colorbar; hold on
 
 [C,h] = contour(x,z,T,[40, 90, 150],'k');
 clabel(C, h, 'Fontsize',12,'Color', 'r')
-ylabel('z [m]','FontSize',15)
-xlabel('x [m]','FontSize',15)
-title(['Temperature Distribution [C] at ', num2str(floor(t/yr)), ' years.'], 'FontSize',17)
+
+ylabel('z (m)','FontSize',15, 'FontName','Times New Roman')
+ylabel(colorbar, 'Temperature (\circC)', 'FontName','Times New Roman')
+xlabel('x (m)','FontSize',15, 'FontName','Times New Roman')
+title(['Temperature Distribution (\circC) at ', num2str(floor(t/yr)), ' years.'], 'FontSize',17, 'FontName','Times New Roman')
 
 drawnow;
 

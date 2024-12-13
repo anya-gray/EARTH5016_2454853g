@@ -6,16 +6,16 @@ clear all; close all; %clc;
 
 % **** MODEL PARAMTERS ****
 yr    = 3600*24*365;    % seconds per year [s]
-t_end = 1e6*yr;         % when to stop the simulation (should be 1e6 years)
-CFL   = 1/10;           % Time step limiter
-nop   = 3000;           % output figure produced every 'nop' iterations
+t_end = 1e4*yr;         % when to stop the simulation (should be 1e6 years)
+CFL   = 1/50;           % Time step limiter
+nop   = 1000;           % output figure produced every 'nop' iterations
 
 
 % number of pixels for the convergence test
 % NN = [100, 200, 300];
 NN = [200];
-% convergenceTest = true;
-validation = false;
+convergenceTest = false;
+validation = true;
 
 % show evolution?
 plotAnimation = false;
@@ -66,24 +66,24 @@ n_units = 9;        % number of rock units contained in image
 % 9: Air/water
 if linear
 matprop = [
-% unit  conductivity  density  heat capacity  heat production
-%  #      sigma (1e3)   rho         Cp           Hr (1e-6)
-   1	    3.6788	    2697.6	    600	        4.172               % C: data_1 (1172 other option)
-   2	    2.465	    2700	    770 	    3.7                 % sigma: data_3 (conversion from) chatGPT conversion; Hr data_4
-   3	    3.2197	    2703.5	    600	        5.575               % ***where are these from??
-   4	    0.77	    1942.3	    740	        0.75                % C: data_1 (quartz); sigma: data_2; Hr: data_5
-   5	    0.77	    2648	    740	        0.95                % C: data_1 (quartz); sigma: data_2; Hr: data_5
-   6	    0.924	    2081.7	    860	        1.43                % C: data_1; rho: excel avg; sigma: data_2; Hr: data_5 (clay only)
-   7	    1.67	    1916	    910	        1.3                 % (MISSING REF FOR SIG, RHO, CP); Hr: data_5 (beach sands)
-   8	    0.919	    1909.78	    740	        1.2                 % (MISSING REF FOR SIG, RHO, CP); Hr: data_5 (beach sands)
-   9	    1e-6        1	        1000	    0];                 % *** should confirm values for simulatoin
+% unit  conductivity  density  heat capacity  heat production   porosity
+%  #        sigma        rho         Cp           Hr (1e-6)       phi (%)
+   1	    3.6788	    2697.6	    1172	    4.172             1.03      % C: data_1, phi data_7, others Excel
+   2	    2.465	    2700	    979 	    3.7               1.2       % sigma: data_3 (conversion from) chatGPT conversion; Hr data_4; Cp data_1; phi data_8
+   3	    3.2197	    2703.5	    1172	    5.575             1.03      % C: data_1, phi data_7, others Excel
+   4	    0.77	    1942.3	    740	        0.75              25.33     % C: data_1 (quartz); sigma: data_2; Hr: data_5
+   5	    0.77	    2648	    740	        0.95              32.5      % C: data_1 (quartz); sigma: data_2; Hr: data_5
+   6	    0.924	    2081.7	    860	        1.43              0.55      % C: data_1; rho: excel avg; sigma: data_2; Hr: data_5 (clay only); phi: data_6 (clay only)
+   7	    1.67	    1916	    910	        1.3               17        % (MISSING REF FOR SIG, RHO, CP); Hr: data_5 (beach sands)
+   8	    0.919	    1909.78	    740	        1.2               21.17     % (MISSING REF FOR SIG, RHO, CP); Hr: data_5 (beach sands)
+   9	    1e-6        1000	    1000	    0                 100];                         % *** should confirm values for simulatoin
 end
 
 % use spatially independent material properties for gaussian convergence test
 if gaussian
     matprop = [
-    % unit  conductivity  density  heat capacity  heat production
-    %  #      sigma (1e3)   rho         Cp           Hr (1e-6)
+     % unit  conductivity  density  heat capacity  heat production  porosity
+    %  #      sigma (1e3)   rho         Cp           Hr (1e-6)         phi
        1	    1	        2000	    1000	    1
        2	    1	        2000	    1000	    1
        3	    1	        2000	    1000	    1
@@ -97,11 +97,21 @@ end
 
 
 % get coefficient fields based on spatial distribution of rock units from image
-sigma  = reshape(matprop(units,2), Nz, Nx) *10^3;       % ensure W/m/K
+sigma  = reshape(matprop(units,2), Nz, Nx);  
 rho    = reshape(matprop(units,3), Nz, Nx);
 Cp     = reshape(matprop(units,4), Nz, Nx);   
 Hr     = reshape(matprop(units,5), Nz, Nx)*10^-6;       % ensure W/m3
+phi    = reshape(matprop(units,6), Nz, Nx)/100;         % percent -> fraction
 
+
+% ******* account for porosities of the sediments
+% ASSUMPTION: all pores are filled with AIR
+sigma = (1-phi).*sigma + phi.*1e-6;
+rho = (1-phi).*rho + phi.*1000;
+Cp = (1-phi).*Cp + phi.*1000;
+Hr = (1-phi).*Hr;               % heat rate of air = 0
+
+energy_factor = sum( rho(:).*Cp(:)*h*h );
 
 % find diffusivity at each coordinate
 k0 = sigma ./ rho ./ Cp;
@@ -109,7 +119,7 @@ k0 = sigma ./ rho ./ Cp;
 
 % calculate source term throughout transect in linear case
 if linear
-source = Hr ./ rho ./ Cp;
+    source = Hr ./ rho ./ Cp;
 end
 
 
@@ -124,9 +134,9 @@ T_air = 5;                  % surface air temperature to enforce at each t
 % *****  RUN MODEL
 run('transect2D.m');
 
-Ex(nn) = Errx;
-Ez(nn) = Errz;
-DH(nn) = h;
+% Ex(nn) = Errx;
+% Ez(nn) = Errz;
+% DH(nn) = h;
 
 end
 
