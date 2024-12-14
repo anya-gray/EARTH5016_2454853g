@@ -27,6 +27,7 @@ dt = CFL * (h/2)^2 / max(k0(:)); % time step [s]
 % indices of air coordinates
 air = units == 9;
 
+
 %*****  Solve Model Equations
 
 t = 0;  % initial time [s]
@@ -41,26 +42,22 @@ if linear
     T = T_air + geotherm*Zc;  
     
     % initialise energy to plot
-    if validation
+    if verification
         thermal_energy = [];
         time = [];
-        temperature = [];
-        factor = [];
+
     end
     
     while t <= t_end
 
-        if ~validation
+        if ~verification
             % enfore air temperature at all timesteps
             T(air) = T_air;
         end
         
         % save the total thermal energy at time t, and time for plotting
-        % round E to 7 significant figures with method from ChatGPT
-        if validation 
-            E = (sum( T(:) ) * energy_factor);
-            % thermal_energy(end+1) = round( E, 7 - ceil(log10(abs(E))));
-            thermal_energy(end+1) = E;
+        if verification 
+            thermal_energy(end+1) = (sum( T(:) ) * energy_factor);
             time(end+1) = t/yr;
         end
     
@@ -69,32 +66,23 @@ if linear
         tau = tau+1;
         
         % 4th-order Runge-Kutta time integration scheme
-        R1 = diffusion(shape, T, k0, h, ix, iz, base_flux, validation);
-        R2 = diffusion(shape, T + R1*dt/2, k0, h, ix, iz, base_flux, validation);
-        R3 = diffusion(shape, T + R2*dt/2, k0, h, ix, iz, base_flux, validation);
-        R4 = diffusion(shape, T + R3*dt, k0, h, ix, iz, base_flux, validation);
+        R1 = diffusion(shape, T, k0, h, ix, iz, base_flux, verification);
+        R2 = diffusion(shape, T + R1*dt/2, k0, h, ix, iz, base_flux, verification);
+        R3 = diffusion(shape, T + R2*dt/2, k0, h, ix, iz, base_flux, verification);
+        R4 = diffusion(shape, T + R3*dt, k0, h, ix, iz, base_flux, verification);
     
-        % numerical solution for T
-        if validation
-            T = T + (R1 + 2*R2 + 2*R3 + R4)*dt/6;      % remove source term
+        % numerical solution for T, remove source for  verification test
+        if verification
+            T = T + (R1 + 2*R2 + 2*R3 + R4)*dt/6;     
         else
             T = T + (R1 + 2*R2 + 2*R3 + R4)*dt/6 + source;
         end
 
-        % progress update: display the time
-        if ~mod(tau,1e5)
-            disp(t/yr)
-        end
-    
         % plot model progress
         if plotAnimation
             if ~mod(tau, plot_freq)
                 makefig(x_cells, z_cells, T, t, yr);
             end
-            % if tau == 1e6
-            %     makefig(x_cells, z_cells, T, t, yr);
-            % end
-
         end
     end
    
@@ -103,11 +91,11 @@ if linear
         makefig(x_cells, z_cells, T, t, yr);
     end
     
-    % move out of this loop eventually
-    if validation
+    % plot the total thermal energy through time
+    if verification
         clf; 
         plot(time, thermal_energy, 'color', [0.5 0 0.5], 'LineWidth',2)
-        ylim([2.716e20 2.717e20])
+        ylim([2.716e20 2.717e20])           % hard coded for a nice image
         xlabel('Time (years)', 'FontSize', 18, 'FontName', 'Times New Roman')
         ylabel('Energy (J)', 'FontSize',18, 'FontName', 'Times New Roman')
         title('Total Thermal Energy in the System', 'FontSize',20, 'FontName', 'Times New Roman')
@@ -116,7 +104,7 @@ end
 
 
 % Function to calculate diffusion rate dTdt
-function dTdt = diffusion(shape, f, k0, h, ix, iz, base_flux, validation)
+function dTdt = diffusion(shape, f, k0, h, ix, iz, base_flux, verification)
 
     % find diffusivity in the linear or gaussian case
     switch shape
@@ -127,6 +115,7 @@ function dTdt = diffusion(shape, f, k0, h, ix, iz, base_flux, validation)
         
         case 'gaussian'
             % no need to move the k0s in this case as they are homogeneous
+            % (gaussian case below sends in k0 as a scalar)
             kz = k0;
             kx = k0;
     end
@@ -137,10 +126,10 @@ function dTdt = diffusion(shape, f, k0, h, ix, iz, base_flux, validation)
     qx = - kx .* diff( f(:,ix), 1, 2) /h;
     
     
-    % put in the basal heat flux in standard linear gradient case
+    % ensure basal heat flux for the normal simulation
     switch shape
         case 'linear'
-            if ~validation
+            if ~verification
                 qz(end,:) = base_flux;
             end
     end
@@ -162,7 +151,7 @@ imagesc(x,z,T); axis equal tight; colorbar; hold on
 
 % contour lines at 40, 90 and 150 degC
 [C,h] = contour(x,z,T,[40, 90, 150],'k');
-clabel(C, h, 'Fontsize',12,'Color', 'r')
+clabel(C, h, 'Fontsize',15,'Color', 'r')
 
 % axes labels and titles
 ylabel('z (m)','FontSize',15, 'FontName','Times New Roman')
@@ -193,10 +182,10 @@ if gaussian
         tau = tau+1;
         
         % 4th-order Runge-Kutta time integration scheme
-        R1 = diffusion(shape, T, k0, h, ix, iz, dTdz_boundaries(2));
-        R2 = diffusion(shape, T + R1*dt/2, k0, h, ix, iz, dTdz_boundaries(2));
-        R3 = diffusion(shape, T + R2*dt/2, k0, h, ix, iz, dTdz_boundaries(2));
-        R4 = diffusion(shape, T + R3*dt, k0, h, ix, iz, dTdz_boundaries(2));
+        R1 = diffusion(shape, T, k0, h, ix, iz, base_flux, verification);
+        R2 = diffusion(shape, T + R1*dt/2, k0, h, ix, iz, base_flux, verification);
+        R3 = diffusion(shape, T + R2*dt/2, k0, h, ix, iz, base_flux, verification);
+        R4 = diffusion(shape, T + R3*dt, k0, h, ix, iz, base_flux, verification);
     
         % numerical solution for T
         T = T + (R1 + 2*R2 + 2*R3 + R4)*dt/6;
@@ -214,7 +203,7 @@ if gaussian
 
         % plot model progress
         if plotAnimation
-            if ~mod(tau,nop)
+            if ~mod(tau, plot_freq)
                 makefig(x_cells, z_cells, T, t, yr);
             end
         end
