@@ -1,0 +1,1 @@
+The files 'transect2D.m' and 'run_transect2D.m' run a heat transport simulation of a 2D subsurface region below Helmsdale in the Scottish Highlands. The purpose of the simulation is to identify high enthalpy regions to estimate a suitable site for a borehole.
